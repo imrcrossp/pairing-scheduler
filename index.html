@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>輪替分組排程 Pairing Scheduler</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Noto Sans TC", sans-serif;
+    background: #1a1a2e;
+    color: #eaeaea;
+    margin: 0;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+  }
+  h1 { margin: 0 0 8px; font-size: 22px; }
+  .hint { color: #9aa0b4; font-size: 13px; margin-bottom: 18px; text-align: center; }
+  .wrap { width: 100%; max-width: 880px; }
+  .panel {
+    background: #23233a;
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 18px;
+  }
+  .panel h2 {
+    margin: 0 0 10px;
+    font-size: 13px;
+    color: #9aa0b4;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .row { display: flex; gap: 18px; flex-wrap: wrap; }
+  .column { flex: 1 1 260px; min-width: 240px; }
+  button, input, textarea, select {
+    background: #2d2d44;
+    color: #eaeaea;
+    border: 1px solid #44446a;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  button { cursor: pointer; }
+  button:hover:not(:disabled) { background: #3a3a5a; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  textarea {
+    width: 100%;
+    min-height: 190px;
+    resize: vertical;
+    line-height: 1.6;
+    font-family: ui-monospace, monospace;
+  }
+  label { font-size: 13px; color: #9aa0b4; display: flex; align-items: center; gap: 8px; }
+  input[type="number"] { width: 76px; text-align: center; }
+  .generate {
+    background: #2a9d8f;
+    border-color: #2a9d8f;
+    color: #fff;
+    font-weight: 700;
+    padding: 10px 22px;
+    font-size: 15px;
+  }
+  .generate:hover:not(:disabled) { background: #35b3a3; }
+  .too-strong-add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .too-strong-add select { flex: 1 1 90px; min-width: 90px; }
+  .too-strong-list { display: flex; flex-direction: column; gap: 6px; }
+  .too-strong-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: #2d2d44;
+    border: 1px solid #44446a;
+    border-radius: 6px;
+    padding: 6px 8px 6px 12px;
+    font-family: ui-monospace, monospace;
+    font-size: 13px;
+  }
+  .too-strong-item.unknown-name { opacity: 0.45; }
+  .too-strong-item .unknown-name-note { font-family: inherit; color: #ffcc66; font-size: 11px; }
+  .too-strong-item button {
+    padding: 2px 8px;
+    font-size: 13px;
+    line-height: 1.2;
+    background: transparent;
+    border-color: transparent;
+    color: #9aa0b4;
+  }
+  .too-strong-item button:hover { color: #ff8080; background: transparent; }
+  .too-strong-empty { color: #6a6f85; font-size: 13px; font-style: italic; }
+  .error { color: #ff8080; font-size: 13px; margin-top: 10px; min-height: 18px; }
+  .summary { color: #9aa0b4; font-size: 13px; margin-bottom: 10px; }
+  .summary .clean { color: #7fffa0; }
+  .summary .relaxed { color: #ffcc66; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    background: #23233a;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td { padding: 7px 10px; border: 1px solid #33334d; text-align: left; }
+  th { background: #2d2d44; color: #c0c4d8; font-weight: 600; }
+  td.round-number { text-align: center; color: #9aa0b4; width: 44px; }
+  td.match { font-family: ui-monospace, monospace; white-space: nowrap; }
+  td.match .versus { color: #6a6f85; padding: 0 6px; }
+  td.resting { font-family: ui-monospace, monospace; color: #9aa0b4; }
+  tr.relaxed td.match { color: #ffcc66; }
+  .reasons { display: block; margin-top: 4px; font-family: inherit; font-size: 12px; color: #ffcc66; white-space: normal; }
+  table.statistics td, table.statistics th { text-align: center; }
+  table.statistics td.name { text-align: left; background: #2d2d44; font-weight: 600; }
+  table.statistics td.zero { color: #555; }
+  table.statistics td.highlight { color: #ffcc66; }
+  details { margin-bottom: 18px; color: #9aa0b4; font-size: 13px; }
+  details summary { cursor: pointer; padding: 4px 0; }
+  details ol { margin: 8px 0 0; padding-left: 22px; line-height: 1.8; }
+  section.results { display: none; }
+</style>
+</head>
+<body>
+  <h1>輪替分組排程</h1>
+  <div class="hint">每輪 4 人上場、配成 2 對互為對手，其餘人休息 · 改完設定按「生成賽程」</div>
+
+  <div class="wrap">
+    <details>
+      <summary>規則優先序（點開）</summary>
+      <ol>
+        <li><strong>連休兩場的人必須上場</strong> — 硬規則，永不放寬</li>
+        <li><strong>太強組合不可同隊</strong> — 軟規則，最後才破</li>
+        <li><strong>上一輪上過的人不上場</strong> — 軟規則，最先破</li>
+        <li>總出場場數盡量平均</li>
+        <li>同一對隊友盡量不重複</li>
+        <li>同兩人盡量不重複對上（第 5 條平手時才看）</li>
+      </ol>
+    </details>
+
+    <div class="panel">
+      <div class="row">
+        <div class="column">
+          <h2>名單（一行一人）</h2>
+          <textarea id="roster" spellcheck="false"></textarea>
+        </div>
+        <div class="column">
+          <h2>太強組合（不可同隊）</h2>
+          <div class="too-strong-add">
+            <select id="tooStrongFirst"></select>
+            <span style="color:#6a6f85">—</span>
+            <select id="tooStrongSecond"></select>
+            <button id="tooStrongAdd">新增</button>
+          </div>
+          <div class="too-strong-list" id="tooStrongList"></div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:16px; align-items:center">
+        <label>輪數 <input id="rounds" type="number" min="1" max="100" value="9"></label>
+        <button class="generate" id="generate">生成賽程</button>
+      </div>
+      <div class="error" id="error"></div>
+    </div>
+
+    <section class="results" id="results">
+      <div class="panel">
+        <h2>賽程</h2>
+        <div class="summary" id="summary"></div>
+        <table id="scheduleTable"></table>
+      </div>
+      <div class="panel">
+        <h2>出場統計</h2>
+        <table class="statistics" id="statisticsTable"></table>
+      </div>
+    </section>
+  </div>
+
+<script>
+const DEFAULT_ROSTER = ['小明', '小華', '阿哲', '阿美', '志偉', '淑芬', '大雄', '小美', '阿強'];
+
+// The three ways to split four selected people into two opposing pairs.
+const PAIRING_SPLITS = [[[0, 1], [2, 3]], [[0, 2], [1, 3]], [[0, 3], [1, 2]]];
+
+const elements = {
+  roster: document.getElementById('roster'),
+  rounds: document.getElementById('rounds'),
+  tooStrongFirst: document.getElementById('tooStrongFirst'),
+  tooStrongSecond: document.getElementById('tooStrongSecond'),
+  tooStrongAdd: document.getElementById('tooStrongAdd'),
+  tooStrongList: document.getElementById('tooStrongList'),
+  generate: document.getElementById('generate'),
+  error: document.getElementById('error'),
+  results: document.getElementById('results'),
+  summary: document.getElementById('summary'),
+  scheduleTable: document.getElementById('scheduleTable'),
+  statisticsTable: document.getElementById('statisticsTable'),
+};
+
+let tooStrongPairs = [];
+
+function parseRoster(text) {
+  return text.split(/[\n,、，]+/).map(line => line.trim()).filter(Boolean);
+}
+
+function createCountMatrix(size) {
+  return Array.from({ length: size }, () => new Array(size).fill(0));
+}
+
+function combinations(items, size) {
+  const result = [];
+  const chosen = [];
+  (function choose(start) {
+    if (chosen.length === size) {
+      result.push(chosen.slice());
+      return;
+    }
+    for (let position = start; position <= items.length - (size - chosen.length); position++) {
+      chosen.push(items[position]);
+      choose(position + 1);
+      chosen.pop();
+    }
+  })(0);
+  return result;
+}
+
+function generateSchedule(names, roundCount, tooStrongPairsToApply) {
+  const personCount = names.length;
+  const indexByName = new Map(names.map((name, index) => [name, index]));
+
+  const bannedTeammates = createCountMatrix(personCount);
+  for (const pair of tooStrongPairsToApply) {
+    const firstIndex = indexByName.get(pair.first);
+    const secondIndex = indexByName.get(pair.second);
+    if (firstIndex === undefined || secondIndex === undefined) continue;
+    bannedTeammates[firstIndex][secondIndex] = 1;
+    bannedTeammates[secondIndex][firstIndex] = 1;
+  }
+
+  const teammateCount = createCountMatrix(personCount);
+  const opponentCount = createCountMatrix(personCount);
+  const gamesPlayed = new Array(personCount).fill(0);
+  const consecutiveRest = new Array(personCount).fill(0);
+  const longestRest = new Array(personCount).fill(0);
+  const backToBackGames = new Array(personCount).fill(0);
+  let previousPlayers = new Set();
+
+  const schedule = [];
+
+  for (let roundNumber = 1; roundNumber <= roundCount; roundNumber++) {
+    // Hard rule: anyone resting two consecutive rounds must play. Order them by
+    // longest rest, then fewest games played, then randomly.
+    const forcedPlayers = names
+      .map((name, index) => index)
+      .filter(index => consecutiveRest[index] >= 2);
+    for (let position = forcedPlayers.length - 1; position > 0; position--) {
+      const swapWith = Math.floor(Math.random() * (position + 1));
+      [forcedPlayers[position], forcedPlayers[swapWith]] =
+        [forcedPlayers[swapWith], forcedPlayers[position]];
+    }
+    forcedPlayers.sort((firstIndex, secondIndex) =>
+      (consecutiveRest[secondIndex] - consecutiveRest[firstIndex]) ||
+      (gamesPlayed[firstIndex] - gamesPlayed[secondIndex]));
+
+    const requiredPlayers = forcedPlayers.slice(0, 4);
+    const requiredSet = new Set(requiredPlayers);
+    const availablePlayers = names
+      .map((name, index) => index)
+      .filter(index => !requiredSet.has(index));
+    const slotsToFill = 4 - requiredPlayers.length;
+
+    let bestGroup = null;
+    let bestCost = null;
+    let tiedCandidateCount = 0;
+
+    for (const fillCandidate of combinations(availablePlayers, slotsToFill)) {
+      const group = requiredPlayers.concat(fillCandidate);
+      const backToBackCount = fillCandidate.filter(index => previousPlayers.has(index)).length;
+
+      for (const [[firstSlot, secondSlot], [thirdSlot, fourthSlot]] of PAIRING_SPLITS) {
+        const teammateOne = group[firstSlot];
+        const teammateTwo = group[secondSlot];
+        const opponentOne = group[thirdSlot];
+        const opponentTwo = group[fourthSlot];
+
+        const cost = [
+          bannedTeammates[teammateOne][teammateTwo] + bannedTeammates[opponentOne][opponentTwo],
+          backToBackCount,
+          gamesPlayed[teammateOne] + gamesPlayed[teammateTwo] +
+            gamesPlayed[opponentOne] + gamesPlayed[opponentTwo],
+          teammateCount[teammateOne][teammateTwo] + teammateCount[opponentOne][opponentTwo],
+          opponentCount[teammateOne][opponentOne] + opponentCount[teammateOne][opponentTwo] +
+            opponentCount[teammateTwo][opponentOne] + opponentCount[teammateTwo][opponentTwo],
+        ];
+
+        let comparison = -1;
+        if (bestCost) {
+          comparison = 0;
+          for (let position = 0; position < cost.length && comparison === 0; position++) {
+            comparison = cost[position] - bestCost[position];
+          }
+        }
+
+        if (comparison < 0) {
+          bestGroup = [teammateOne, teammateTwo, opponentOne, opponentTwo];
+          bestCost = cost;
+          tiedCandidateCount = 1;
+        } else if (comparison === 0) {
+          // Reservoir sampling, so every equally good candidate is equally likely.
+          tiedCandidateCount++;
+          if (Math.random() < 1 / tiedCandidateCount) {
+            bestGroup = [teammateOne, teammateTwo, opponentOne, opponentTwo];
+          }
+        }
+      }
+    }
+
+    const [teammateOne, teammateTwo, opponentOne, opponentTwo] = bestGroup;
+    const playerSet = new Set(bestGroup);
+
+    const reasons = [];
+    let relaxedTooStrong = 0;
+    for (const [firstIndex, secondIndex] of [[teammateOne, teammateTwo], [opponentOne, opponentTwo]]) {
+      if (bannedTeammates[firstIndex][secondIndex]) {
+        reasons.push(`${names[firstIndex]}—${names[secondIndex]} 太強組合同隊`);
+        relaxedTooStrong++;
+      }
+    }
+    let relaxedBackToBack = 0;
+    for (const player of bestGroup) {
+      if (previousPlayers.has(player)) {
+        reasons.push(`${names[player]} 連場（第 ${roundNumber - 1} 輪也上）`);
+        backToBackGames[player]++;
+        relaxedBackToBack++;
+      }
+    }
+
+    schedule.push({
+      roundNumber,
+      pairs: [
+        [names[teammateOne], names[teammateTwo]],
+        [names[opponentOne], names[opponentTwo]],
+      ],
+      resting: names.filter((name, index) => !playerSet.has(index)),
+      reasons,
+      relaxedTooStrong,
+      relaxedBackToBack,
+    });
+
+    teammateCount[teammateOne][teammateTwo]++;
+    teammateCount[teammateTwo][teammateOne]++;
+    teammateCount[opponentOne][opponentTwo]++;
+    teammateCount[opponentTwo][opponentOne]++;
+    for (const leftPlayer of [teammateOne, teammateTwo]) {
+      for (const rightPlayer of [opponentOne, opponentTwo]) {
+        opponentCount[leftPlayer][rightPlayer]++;
+        opponentCount[rightPlayer][leftPlayer]++;
+      }
+    }
+
+    for (let index = 0; index < personCount; index++) {
+      if (playerSet.has(index)) {
+        gamesPlayed[index]++;
+        consecutiveRest[index] = 0;
+      } else {
+        consecutiveRest[index]++;
+        longestRest[index] = Math.max(longestRest[index], consecutiveRest[index]);
+      }
+    }
+
+    previousPlayers = playerSet;
+  }
+
+  const statistics = names.map((name, index) => ({
+    name,
+    gamesPlayed: gamesPlayed[index],
+    longestRest: longestRest[index],
+    backToBackGames: backToBackGames[index],
+  }));
+
+  return { schedule, statistics };
+}
+
+function renderSummary(schedule) {
+  const backToBackTotal = schedule.reduce((total, round) => total + round.relaxedBackToBack, 0);
+  const tooStrongTotal = schedule.reduce((total, round) => total + round.relaxedTooStrong, 0);
+  elements.summary.innerHTML = (backToBackTotal === 0 && tooStrongTotal === 0)
+    ? '<span class="clean">本次沒有放寬任何規則。</span>'
+    : `<span class="relaxed">本次放寬：${backToBackTotal} 次連場、${tooStrongTotal} 次太強組合同隊。</span>`;
+}
+
+function renderSchedule(schedule) {
+  const rows = schedule.map(round => {
+    const [[teammateOne, teammateTwo], [opponentOne, opponentTwo]] = round.pairs;
+    const relaxed = round.reasons.length > 0;
+    const reasons = relaxed ? `<span class="reasons">⚠ ${round.reasons.join('、')}</span>` : '';
+    return `<tr class="${relaxed ? 'relaxed' : ''}">
+      <td class="round-number">${round.roundNumber}</td>
+      <td class="match">${teammateOne}／${teammateTwo}<span class="versus">vs</span>${opponentOne}／${opponentTwo}${reasons}</td>
+      <td class="resting">${round.resting.join(' ') || '—'}</td>
+    </tr>`;
+  }).join('');
+
+  elements.scheduleTable.innerHTML = `
+    <thead><tr><th class="round-number">輪</th><th>上場</th><th>休息</th></tr></thead>
+    <tbody>${rows}</tbody>`;
+}
+
+function renderStatistics(statistics) {
+  const gameCounts = statistics.map(person => person.gamesPlayed);
+  const mostGames = Math.max(...gameCounts);
+  const fewestGames = Math.min(...gameCounts);
+  const rows = statistics.map(person => `<tr>
+    <td class="name">${person.name}</td>
+    <td>${person.gamesPlayed}</td>
+    <td class="${person.longestRest === 0 ? 'zero' : ''}">${person.longestRest}</td>
+    <td class="${person.backToBackGames === 0 ? 'zero' : 'highlight'}">${person.backToBackGames}</td>
+  </tr>`).join('');
+
+  elements.statisticsTable.innerHTML = `
+    <thead><tr><th>人</th><th>出場場數</th><th>最長連休</th><th>連場次數</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr>
+      <td class="name">場數差距</td>
+      <td colspan="3" style="text-align:left; color:#9aa0b4">最多 ${mostGames} 場、最少 ${fewestGames} 場，相差 ${mostGames - fewestGames}</td>
+    </tr></tfoot>`;
+}
+
+function refreshTooStrongSelects() {
+  const names = parseRoster(elements.roster.value);
+  for (const select of [elements.tooStrongFirst, elements.tooStrongSecond]) {
+    const previousValue = select.value;
+    select.innerHTML = names.map(name => `<option value="${name}">${name}</option>`).join('');
+    if (names.includes(previousValue)) select.value = previousValue;
+  }
+  if (names.length > 1 && elements.tooStrongSecond.value === elements.tooStrongFirst.value) {
+    elements.tooStrongSecond.selectedIndex = 1;
+  }
+}
+
+function renderTooStrongList() {
+  const names = new Set(parseRoster(elements.roster.value));
+  if (tooStrongPairs.length === 0) {
+    elements.tooStrongList.innerHTML =
+      '<div class="too-strong-empty">沒有限制，任何兩人都可以同隊。</div>';
+    return;
+  }
+  elements.tooStrongList.innerHTML = tooStrongPairs.map((pair, index) => {
+    const unknownName = !names.has(pair.first) || !names.has(pair.second);
+    const note = unknownName
+      ? '<span class="unknown-name-note">名單中無此人，已忽略</span>'
+      : '';
+    return `<div class="too-strong-item ${unknownName ? 'unknown-name' : ''}">
+      <span>${pair.first} — ${pair.second} ${note}</span>
+      <button data-remove="${index}" title="移除">✕</button>
+    </div>`;
+  }).join('');
+}
+
+elements.tooStrongList.addEventListener('click', event => {
+  const removeButton = event.target.closest('[data-remove]');
+  if (!removeButton) return;
+  tooStrongPairs.splice(Number(removeButton.dataset.remove), 1);
+  renderTooStrongList();
+});
+
+elements.tooStrongAdd.addEventListener('click', () => {
+  const first = elements.tooStrongFirst.value;
+  const second = elements.tooStrongSecond.value;
+  elements.error.textContent = '';
+  if (!first || !second) return;
+  if (first === second) {
+    elements.error.textContent = '太強組合要是不同的兩個人。';
+    return;
+  }
+  const alreadyListed = tooStrongPairs.some(pair =>
+    (pair.first === first && pair.second === second) ||
+    (pair.first === second && pair.second === first));
+  if (alreadyListed) {
+    elements.error.textContent = `「${first} — ${second}」已經在清單裡了。`;
+    return;
+  }
+  tooStrongPairs.push({ first, second });
+  renderTooStrongList();
+});
+
+elements.roster.addEventListener('input', () => {
+  refreshTooStrongSelects();
+  renderTooStrongList();
+});
+
+elements.generate.addEventListener('click', () => {
+  const names = parseRoster(elements.roster.value);
+
+  let problem = '';
+  if (names.length < 4) {
+    problem = '名單至少要 4 個人。';
+  } else {
+    const seenNames = new Set();
+    for (const name of names) {
+      if (seenNames.has(name)) {
+        problem = `名單有重複的「${name}」，請改成不同的名字。`;
+        break;
+      }
+      seenNames.add(name);
+    }
+  }
+  elements.error.textContent = problem;
+  if (problem) {
+    elements.results.style.display = 'none';
+    return;
+  }
+
+  const roundCount = Math.max(1, Math.min(100, Number(elements.rounds.value) || 1));
+  elements.rounds.value = roundCount;
+
+  const applicablePairs = tooStrongPairs.filter(pair =>
+    names.includes(pair.first) && names.includes(pair.second));
+  const { schedule, statistics } = generateSchedule(names, roundCount, applicablePairs);
+
+  renderSummary(schedule);
+  renderSchedule(schedule);
+  renderStatistics(statistics);
+  elements.results.style.display = 'block';
+  elements.generate.textContent = '重新生成';
+});
+
+elements.roster.value = DEFAULT_ROSTER.join('\n');
+refreshTooStrongSelects();
+renderTooStrongList();
+elements.generate.click();
+</script>
+</body>
+</html>
