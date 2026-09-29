@@ -137,7 +137,7 @@
         <li>總出場場數盡量平均</li>
         <li>同一對隊友盡量不重複</li>
         <li>同兩人盡量不重複對上（第 5 條平手時才看）</li>
-        <li><strong>剛好 8 人時</strong>，第 4、7、10… 輪固定安排 1 人連場、換下 1 人輪休，讓兩組互相混合；輪休過越多次的人越不會再被換下</li>
+        <li><strong>剛好 8 人時</strong>，第 4、7、10… 輪固定安排 1 人連場、換下 1 人輪休，讓兩組互相混合；連場過越多次的人越不會再被排連場，輪休過越多次的人越不會再被換下</li>
       </ol>
     </details>
 
@@ -297,7 +297,10 @@ function generateSchedule(names, roundCount, tooStrongPairsToApply) {
 
     for (const fillCandidate of combinations(availablePlayers, slotsToFill)) {
       const group = requiredPlayers.concat(fillCandidate);
-      const backToBackCount = fillCandidate.filter(index => previousPlayers.has(index)).length;
+      const backToBackPlayers = fillCandidate.filter(index => previousPlayers.has(index));
+      const backToBackCount = backToBackPlayers.length;
+      const backToBackHistory = backToBackPlayers
+        .reduce((total, index) => total + backToBackGames[index], 0);
       const benchedAgainCount = lastRoundResters
         .filter(index => !fillCandidate.includes(index))
         .reduce((total, index) => total + rotationBenchCount[index], 0);
@@ -311,6 +314,7 @@ function generateSchedule(names, roundCount, tooStrongPairsToApply) {
         const cost = [
           bannedTeammates[teammateOne][teammateTwo] + bannedTeammates[opponentOne][opponentTwo],
           Math.abs(backToBackCount - plannedBackToBack),
+          backToBackHistory,
           benchedAgainCount,
           gamesPlayed[teammateOne] + gamesPlayed[teammateTwo] +
             gamesPlayed[opponentOne] + gamesPlayed[opponentTwo],

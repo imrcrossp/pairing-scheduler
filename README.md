@@ -37,6 +37,9 @@ plays again and one person who would have played rests instead; that person has
 then rested twice and rule 1 brings them back, mixing the two groups. The person
 benched this way is whoever among last round's resters has been benched least.
 
+Whenever someone must play back-to-back (planned or not), it goes to whoever has
+played back-to-back the fewest times so far.
+
 The schedule is built round by round: enumerate every legal way to fill the four
 slots and split them into two pairs, score each with a lexicographic cost vector,
 take the minimum, break ties randomly.
