@@ -112,6 +112,7 @@
   td.resting { font-family: ui-monospace, monospace; color: #9aa0b4; }
   tr.relaxed td.match { color: #ffcc66; }
   .reasons { display: block; margin-top: 4px; font-family: inherit; font-size: 12px; color: #ffcc66; white-space: normal; }
+  .rotation-break-note { display: block; margin-top: 4px; font-family: inherit; font-size: 12px; color: #8ecae6; white-space: normal; }
   table.statistics td, table.statistics th { text-align: center; }
   table.statistics td.name { text-align: left; background: #2d2d44; font-weight: 600; }
   table.statistics td.zero { color: #555; }
@@ -136,6 +137,7 @@
         <li>總出場場數盡量平均</li>
         <li>同一對隊友盡量不重複</li>
         <li>同兩人盡量不重複對上（第 5 條平手時才看）</li>
+        <li><strong>剛好 8 人時</strong>，第 4、7、10… 輪固定安排 1 人連場、換下 1 人輪休，讓兩組互相混合</li>
       </ol>
     </details>
 
@@ -181,6 +183,19 @@ const DEFAULT_ROSTER = ['小明', '小華', '阿哲', '阿美', '志偉', '淑�
 
 // The three ways to split four selected people into two opposing pairs.
 const PAIRING_SPLITS = [[[0, 1], [2, 3]], [[0, 2], [1, 3]], [[0, 3], [1, 2]]];
+
+// With exactly 8 people, "no back-to-back games" locks the roster into two
+// fixed groups that alternate forever. Every ROTATION_BREAK_INTERVAL rounds
+// (rounds 4, 7, 10, ...) one person from the last round plays again, so one
+// person who would have played rests instead and the groups mix.
+const ROTATION_BREAK_ROSTER_SIZE = 8;
+const ROTATION_BREAK_INTERVAL = 3;
+
+function isRotationBreakRound(personCount, roundNumber) {
+  return personCount === ROTATION_BREAK_ROSTER_SIZE &&
+    roundNumber > ROTATION_BREAK_INTERVAL &&
+    (roundNumber - 1) % ROTATION_BREAK_INTERVAL === 0;
+}
 
 const elements = {
   roster: document.getElementById('roster'),
@@ -268,6 +283,7 @@ function generateSchedule(names, roundCount, tooStrongPairsToApply) {
       .map((name, index) => index)
       .filter(index => !requiredSet.has(index));
     const slotsToFill = 4 - requiredPlayers.length;
+    const plannedBackToBack = isRotationBreakRound(personCount, roundNumber) ? 1 : 0;
 
     let bestGroup = null;
     let bestCost = null;
@@ -285,7 +301,7 @@ function generateSchedule(names, roundCount, tooStrongPairsToApply) {
 
         const cost = [
           bannedTeammates[teammateOne][teammateTwo] + bannedTeammates[opponentOne][opponentTwo],
-          backToBackCount,
+          Math.abs(backToBackCount - plannedBackToBack),
           gamesPlayed[teammateOne] + gamesPlayed[teammateTwo] +
             gamesPlayed[opponentOne] + gamesPlayed[opponentTwo],
           teammateCount[teammateOne][teammateTwo] + teammateCount[opponentOne][opponentTwo],
@@ -327,11 +343,22 @@ function generateSchedule(names, roundCount, tooStrongPairsToApply) {
       }
     }
     let relaxedBackToBack = 0;
+    let rotationBreakNote = '';
+    let unplannedBackToBackRemaining = bestGroup
+      .filter(player => previousPlayers.has(player)).length - plannedBackToBack;
     for (const player of bestGroup) {
-      if (previousPlayers.has(player)) {
+      if (!previousPlayers.has(player)) continue;
+      backToBackGames[player]++;
+      if (!rotationBreakNote && plannedBackToBack) {
+        const benchedPlayers = names.filter((name, index) =>
+          !previousPlayers.has(index) && !playerSet.has(index));
+        rotationBreakNote = `換組：${names[player]} 連場，${benchedPlayers.join('、')} 輪休`;
+        continue;
+      }
+      if (unplannedBackToBackRemaining > 0) {
         reasons.push(`${names[player]} 連場（第 ${roundNumber - 1} 輪也上）`);
-        backToBackGames[player]++;
         relaxedBackToBack++;
+        unplannedBackToBackRemaining--;
       }
     }
 
@@ -343,6 +370,7 @@ function generateSchedule(names, roundCount, tooStrongPairsToApply) {
       ],
       resting: names.filter((name, index) => !playerSet.has(index)),
       reasons,
+      rotationBreakNote,
       relaxedTooStrong,
       relaxedBackToBack,
     });
@@ -394,9 +422,12 @@ function renderSchedule(schedule) {
     const [[teammateOne, teammateTwo], [opponentOne, opponentTwo]] = round.pairs;
     const relaxed = round.reasons.length > 0;
     const reasons = relaxed ? `<span class="reasons">⚠ ${round.reasons.join('、')}</span>` : '';
+    const rotationBreakNote = round.rotationBreakNote
+      ? `<span class="rotation-break-note">↻ ${round.rotationBreakNote}</span>`
+      : '';
     return `<tr class="${relaxed ? 'relaxed' : ''}">
       <td class="round-number">${round.roundNumber}</td>
-      <td class="match">${teammateOne}／${teammateTwo}<span class="versus">vs</span>${opponentOne}／${opponentTwo}${reasons}</td>
+      <td class="match">${teammateOne}／${teammateTwo}<span class="versus">vs</span>${opponentOne}／${opponentTwo}${rotationBreakNote}${reasons}</td>
       <td class="resting">${round.resting.join(' ') || '—'}</td>
     </tr>`;
   }).join('');

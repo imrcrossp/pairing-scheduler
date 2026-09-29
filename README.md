@@ -31,6 +31,11 @@ Nothing is persisted — reloading starts clean.
 5. Avoid repeating the same teammate pair.
 6. Avoid repeating the same opponent pair — tie-break for rule 5 only.
 
+With exactly 8 people, rule 3 would lock the roster into two fixed groups that
+alternate forever. So on rounds 4, 7, 10, … one person from the previous round
+plays again and one person who would have played rests instead; that person has
+then rested twice and rule 1 brings them back, mixing the two groups.
+
 The schedule is built round by round: enumerate every legal way to fill the four
 slots and split them into two pairs, score each with a lexicographic cost vector,
 take the minimum, break ties randomly.
