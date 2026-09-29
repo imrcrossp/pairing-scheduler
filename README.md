@@ -34,7 +34,8 @@ Nothing is persisted — reloading starts clean.
 With exactly 8 people, rule 3 would lock the roster into two fixed groups that
 alternate forever. So on rounds 4, 7, 10, … one person from the previous round
 plays again and one person who would have played rests instead; that person has
-then rested twice and rule 1 brings them back, mixing the two groups.
+then rested twice and rule 1 brings them back, mixing the two groups. The person
+benched this way is whoever among last round's resters has been benched least.
 
 The schedule is built round by round: enumerate every legal way to fill the four
 slots and split them into two pairs, score each with a lexicographic cost vector,
